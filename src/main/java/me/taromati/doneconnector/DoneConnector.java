@@ -317,162 +317,168 @@ public final class DoneConnector extends JavaPlugin implements Listener {
         soopWebSocketList.clear();
     }
 
+    @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
-        if (label.equalsIgnoreCase("done") == false) {
-            return false;
-        } else if (sender.isOp() == false) {
-            sender.sendMessage(ChatColor.RED + "권한이 없습니다.");
-            return false;
-        } else if (args.length < 1) {
-            return false;
-        }
+        //sender.sendMessage(ChatColor.YELLOW + "DEBUG: command.getName() = " + command.getName());
 
-        try {
-            String cmd = args[0];
-
-            if (cmd.equalsIgnoreCase("on")) {
-                Logger.warn("후원 기능을 활성화 합니다.");
-                connectChzzkList();
-                connectSoopList();
-            } else if (cmd.equalsIgnoreCase("off")) {
-                Logger.warn("후원 기능을 비활성화 합니다.");
-                disconnectChzzkList();
-                disconnectSoopList();
-            } else if (cmd.equalsIgnoreCase("reconnect")) {
-                Logger.warn("후원 기능을 재접속합니다.");
-
-                if (args.length < 2) {
-                    Logger.warn("all 혹은 스트리머 닉네임을 입력해주세요.");
-                    return false;
-                }
-
-                String target = args[1];
-
-                if (Objects.equals(target, "all")) {
-                    disconnectChzzkList();
-                    disconnectSoopList();
-                    connectChzzkList();
-                    connectSoopList();
-                    Logger.info(ChatColor.GREEN + "후원 기능 재 접속을 완료 했습니다.");
-
-                    return true;
-                }
-                // 방송/마크 닉네임으로 재접속
-                {
-                    disconnectByNickName(target);
-                    int reconnectCount = chzzkUserList.stream()
-                            .filter(user -> Objects.equals(user.get("nickname"), target) || Objects.equals(user.get("tag"), target))
-                            .map(user -> {
-                                try {
-                                    connectChzzk(user);
-                                    Logger.info(ChatColor.GREEN + "[" + target + "] 재 접속을 완료 했습니다.");
-                                    return 1;
-                                } catch (Exception e) {
-                                    Logger.error("[" + target + "] 채팅에 연결 중 오류가 발생했습니다.");
-                                }
-                                return 0;
-                            })
-                            .reduce(Integer::sum)
-                            .orElse(0);
-
-                    reconnectCount += soopUserList.stream()
-                            .filter(user -> Objects.equals(user.get("nickname"), target) || Objects.equals(user.get("tag"), target))
-                            .map(user -> {
-                                try {
-                                    connectSoop(user);
-                                    Logger.info(ChatColor.GREEN + "[" + target + "] 재 접속을 완료 했습니다.");
-                                    return 1;
-                                } catch (Exception e) {
-                                    Logger.error("[" + target + "] 채팅에 연결 중 오류가 발생했습니다.");
-                                }
-                                return 0;
-                            })
-                            .reduce(Integer::sum)
-                            .orElse(0);
-
-                    if (reconnectCount <= 0) {
-                        Logger.warn("닉네임을 찾을 수 없습니다.");
-                        return false;
-                    }
-                }
-            } else if (cmd.equalsIgnoreCase("add")) {
-                if (args.length < 5) {
-                    Logger.error("옵션 누락. /done add <플랫폼> <방송닉> <방송ID> <마크닉>");
-                    return false;
-                }
-                String platform = args[1];
-                String nickname = args[2];
-                String id = args[3];
-                String tag = args[4];
-
-                switch (platform) {
-                    case "치지직" -> {
-                        Map<String, String> userMap = new HashMap<>();
-                        userMap.put("nickname", nickname);
-                        userMap.put("id", id);
-                        userMap.put("tag", tag);
-
-                        if (connectChzzk(userMap)) {
-                            chzzkUserList.add(userMap);
-                        }
-                    }
-                    case "숲" -> {
-                        Map<String, String> userMap = new HashMap<>();
-                        userMap.put("nickname", nickname);
-                        userMap.put("id", id);
-                        userMap.put("tag", tag);
-                        if (connectSoop(userMap)) {
-                            soopUserList.add(userMap);
-                        }
-                    }
-                }
-
-            } else if (cmd.equalsIgnoreCase("reload")) {
-                Logger.warn("후원 설정을 다시 불러옵니다.");
-                // Google Sheets 설정 리로드
-                sheet.reloadSheetConfig();
-
-                // 최신 데이터 가져오기
-                Bukkit.getScheduler().runTaskAsynchronously(this, () -> {
-                    sheet.fetchAndSaveData();
-                    Logger.info(ChatColor.GREEN + "[Sheet] Google Sheets 데이터 리로드 완료!");
-                });
-
-                sender.sendMessage(ChatColor.GREEN + "[Sheet] Google Sheets 데이터가 성공적으로 리로드되었습니다!");
-
-                disconnectChzzkList();
-                disconnectSoopList();
-
-                clearConfig();
-                loadConfig();
-
-                connectChzzkList();
-                connectSoopList();
-
-            } else if (cmd.equalsIgnoreCase("ymlreload")) {
-                Logger.warn("[Sheet] Google Sheets 데이터를 다시 불러옵니다.");
-
-                // Google Sheets 설정 리로드
-                sheet.reloadSheetConfig();
-
-                // 최신 데이터 가져오기
-                Bukkit.getScheduler().runTaskAsynchronously(this, () -> {
-                    sheet.fetchAndSaveData();
-                    Logger.info(ChatColor.GREEN + "[Sheet] Google Sheets 데이터 리로드 완료!");
-                });
-
-                sender.sendMessage(ChatColor.GREEN + "[Sheet] Google Sheets 데이터가 성공적으로 리로드되었습니다!");
-
-        } else {
-                return false;
+        if (command.getName().equalsIgnoreCase("api")) {
+            if (!(sender instanceof Player)) {
+                sender.sendMessage(ChatColor.RED + "이 명령어는 플레이어만 사용할 수 있습니다.");
+                return true;
             }
-        } catch (Exception e) {
-            Logger.error("커맨드 수행 중 오류가 발생했습니다.");
 
-            return false;
+            Player player = (Player) sender;
+            String playerName = player.getName();
+            boolean found = false;
+            StringBuilder statusMessage = new StringBuilder(ChatColor.YELLOW + "\n[ API 상태 ]\n" + ChatColor.GRAY + " \n\n현제 활성화 되어있는 플렛폼\n");
+
+            for (Map<String, String> chzzkUser : chzzkUserList) {
+                if (chzzkUser.get("tag").equalsIgnoreCase(playerName)) {
+                    boolean isLive = liveStatus.getOrDefault(chzzkUser.get("id"), false);
+                    statusMessage.append(ChatColor.WHITE + "\n[ 치지직 ]\n방송상태: ").append(isLive ? ChatColor.GREEN + "ON\n" : ChatColor.RED + "OFF\n");
+                    found = true;
+                }
+            }
+
+            for (Map<String, String> soopUser : soopUserList) {
+                if (soopUser.get("tag").equalsIgnoreCase(playerName)) {
+                    boolean isLive = liveStatus.getOrDefault(soopUser.get("id"), false);
+                    statusMessage.append(ChatColor.WHITE + "\n[ 숲 ]\n방송상태: ").append(isLive ? ChatColor.GREEN + "ON\n" : ChatColor.RED + "OFF\n");
+                    found = true;
+                }
+            }
+
+            if (!found) {
+                sender.sendMessage(ChatColor.RED + "현재 연결된 방송 플랫폼이 없습니다.");
+            } else {
+                sender.sendMessage(statusMessage.toString());
+            }
+
+            return true;
         }
 
-        return true;
+        // `/done` 명령어 처리
+        if (command.getName().equalsIgnoreCase("done")) {
+            //sender.sendMessage(ChatColor.YELLOW + "DEBUG: '/done' 명령어 감지됨.");
+
+            if (!sender.isOp()) {
+                sender.sendMessage(ChatColor.RED + "권한이 없습니다.");
+                return true;
+            }
+
+            if (args.length == 0) {
+                sender.sendMessage(ChatColor.RED + "사용법: /done [on|off|reconnect|reload|add|ymlreload]");
+                return true;
+            }
+
+            String cmd = args[0].toLowerCase();
+            //sender.sendMessage(ChatColor.YELLOW + "DEBUG: 입력된 서브 명령어 = " + cmd);
+
+            try {
+                switch (cmd) {
+                    case "on":
+                        Logger.warn("후원 기능을 활성화 합니다.");
+                        connectChzzkList();
+                        connectSoopList();
+                        sender.sendMessage(ChatColor.GREEN + "후원 기능이 활성화되었습니다.");
+                        break;
+
+                    case "off":
+                        Logger.warn("후원 기능을 비활성화 합니다.");
+                        disconnectChzzkList();
+                        disconnectSoopList();
+                        sender.sendMessage(ChatColor.RED + "후원 기능이 비활성화되었습니다.");
+                        break;
+
+                    case "reconnect":
+                        if (args.length < 2) {
+                            sender.sendMessage(ChatColor.RED + "사용법: /done reconnect <all|닉네임>");
+                            return true;
+                        }
+                        String target = args[1];
+                        sender.sendMessage(ChatColor.YELLOW + "DEBUG: 재접속 대상 = " + target);
+
+                        if (target.equalsIgnoreCase("all")) {
+                            disconnectChzzkList();
+                            disconnectSoopList();
+                            connectChzzkList();
+                            connectSoopList();
+                            sender.sendMessage(ChatColor.GREEN + "모든 후원 기능이 재접속되었습니다.");
+                        } else {
+                            disconnectByNickName(target);
+                            sender.sendMessage(ChatColor.GREEN + "[" + target + "] 재접속 완료.");
+                        }
+                        break;
+
+                    case "add":
+                        if (args.length < 5) {
+                            sender.sendMessage(ChatColor.RED + "사용법: /done add <플랫폼> <방송닉> <방송ID> <마크닉>");
+                            return true;
+                        }
+                        String platform = args[1];
+                        String nickname = args[2];
+                        String id = args[3];
+                        String tag = args[4];
+
+                        sender.sendMessage(ChatColor.YELLOW + "DEBUG: 플랫폼 = " + platform);
+                        sender.sendMessage(ChatColor.YELLOW + "DEBUG: 방송닉 = " + nickname);
+                        sender.sendMessage(ChatColor.YELLOW + "DEBUG: 방송ID = " + id);
+                        sender.sendMessage(ChatColor.YELLOW + "DEBUG: 마크닉 = " + tag);
+
+                        if (platform.equalsIgnoreCase("치지직")) {
+                            connectChzzk(Map.of("nickname", nickname, "id", id, "tag", tag));
+                            sender.sendMessage(ChatColor.GREEN + "치지직 플랫폼에 추가되었습니다.");
+                        } else if (platform.equalsIgnoreCase("숲")) {
+                            connectSoop(Map.of("nickname", nickname, "id", id, "tag", tag));
+                            sender.sendMessage(ChatColor.GREEN + "숲 플랫폼에 추가되었습니다.");
+                        } else {
+                            sender.sendMessage(ChatColor.RED + "올바른 플랫폼을 입력하세요. (치지직 / 숲)");
+                        }
+                        break;
+
+                    case "reload":
+                        Logger.warn("후원 설정을 다시 불러옵니다.");
+
+                        // Google Sheets 데이터 리로드
+                        sheet.reloadSheetConfig();
+                        Bukkit.getScheduler().runTaskAsynchronously(plugin, sheet::fetchAndSaveData);
+                        sender.sendMessage(ChatColor.GREEN + "[Sheet] Google Sheets 데이터가 성공적으로 리로드되었습니다!");
+
+                        // 기존 연결 해제 후 설정 다시 로드
+                        disconnectChzzkList();
+                        disconnectSoopList();
+                        clearConfig();
+                        loadConfig();
+                        connectChzzkList();
+                        connectSoopList();
+
+                        sender.sendMessage(ChatColor.GREEN + "[Done] 설정이 성공적으로 리로드되었습니다!");
+                        break;
+
+                    case "ymlreload":
+                        Logger.warn("[Sheet] Google Sheets 데이터를 다시 불러옵니다.");
+
+                        // Google Sheets 데이터만 다시 로드
+                        sheet.reloadSheetConfig();
+                        Bukkit.getScheduler().runTaskAsynchronously(plugin, sheet::fetchAndSaveData);
+                        sender.sendMessage(ChatColor.GREEN + "[Sheet] Google Sheets 데이터가 성공적으로 리로드되었습니다!");
+                        break;
+
+                    default:
+                        sender.sendMessage(ChatColor.RED + "알 수 없는 명령어입니다.");
+                        sender.sendMessage(ChatColor.YELLOW + "DEBUG: 잘못된 서브 명령어 입력됨 = " + cmd);
+                        return true;
+                }
+            } catch (Exception e) {
+                Logger.error("커맨드 수행 중 오류 발생: " + e.getMessage());
+                e.printStackTrace();
+            }
+
+            return true;
+        }
+
+        sender.sendMessage(ChatColor.RED + "DEBUG: 해당 명령어는 처리할 수 없습니다.");
+        return false;
     }
 
     public List<String> onTabComplete(CommandSender sender, @NotNull Command cmd, @NotNull String label, String[] args) {
