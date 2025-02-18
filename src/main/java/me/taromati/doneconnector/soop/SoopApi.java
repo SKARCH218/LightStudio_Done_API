@@ -38,14 +38,19 @@ public class SoopApi {
                     .uri(URI.create(requestURL))
                     .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
                     .header("Content-Type", "application/x-www-form-urlencoded")
-                    .build(); // HttpRequest 생성
-
+                    .build();
 
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
 
             if (response.statusCode() == 200) {
                 JSONParser parser = new JSONParser();
                 JSONObject jsonObject = (JSONObject) parser.parse(response.body());
+
+                if (!jsonObject.containsKey("CHANNEL")) {
+                    Logger.debug("방송 데이터가 없음: " + response.body());
+                    return null; // 방송이 없으면 null 반환
+                }
+
                 JSONObject channel = (JSONObject) jsonObject.get("CHANNEL");
                 SoopLiveInfo soopLiveInfo = new SoopLiveInfo(
                         channel.get("CHDOMAIN").toString(),
@@ -70,6 +75,16 @@ public class SoopApi {
             }
         } catch (Exception e) {
             throw new DoneException(ExceptionCode.API_CHAT_CHANNEL_ID_ERROR);
+        }
+    }
+
+    public static boolean isLive(String bjid) {
+        try {
+            SoopLiveInfo liveInfo = getPlayerLive(bjid);
+            return liveInfo != null; // 방송이 있으면 true, 없으면 false
+        } catch (Exception e) {
+            //Logger.error("숲 방송 상태 확인 중 오류 발생: " + e.getMessage());
+            return false;
         }
     }
 

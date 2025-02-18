@@ -1,17 +1,18 @@
 package me.taromati.doneconnector;
 
-import me.taromati.doneconnector.soop.SoopApi;
-import me.taromati.doneconnector.soop.SoopLiveInfo;
-import me.taromati.doneconnector.soop.SoopWebSocket;
 import me.taromati.doneconnector.chzzk.ChzzkApi;
 import me.taromati.doneconnector.chzzk.ChzzkWebSocket;
 import me.taromati.doneconnector.exception.DoneException;
 import me.taromati.doneconnector.exception.ExceptionCode;
+import me.taromati.doneconnector.soop.SoopApi;
+import me.taromati.doneconnector.soop.SoopLiveInfo;
+import me.taromati.doneconnector.soop.SoopWebSocket;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.bukkit.configuration.file.FileConfiguration;
+import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
 import org.bukkit.event.Listener;
 import org.bukkit.plugin.Plugin;
@@ -20,6 +21,7 @@ import org.java_websocket.drafts.Draft_6455;
 import org.java_websocket.protocols.Protocol;
 import org.jetbrains.annotations.NotNull;
 
+import java.io.File;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -30,60 +32,58 @@ public final class DoneConnector extends JavaPlugin implements Listener {
     public static boolean random;
     public static boolean poong = false;
 
+    private static final Map<String, Boolean> liveStatus = new HashMap<>();
     private static final List<Map<String, String>> chzzkUserList = new ArrayList<>();
     private static final List<Map<String, String>> soopUserList = new ArrayList<>();
     private static final HashMap<Integer, List<String>> donationRewards = new HashMap<>();
     List<ChzzkWebSocket> chzzkWebSocketList = new ArrayList<>();
     List<SoopWebSocket> soopWebSocketList = new ArrayList<>();
 
+    private Sheet sheet; // Sheet 객체 선언
+
     @Override
     public void onEnable() {
         plugin = this;
         Bukkit.getPluginManager().registerEvents(this, this);
-        Objects.requireNonNull(this.getCommand("done")).setExecutor(this);
-        Objects.requireNonNull(this.getCommand("done")).setTabCompleter(this);
 
+        // 명령어 등록 확인
+        if (getCommand("done") == null) {
+            Logger.error("명령어 'done'을 찾을 수 없습니다. plugin.yml을 확인하세요.");
+            Bukkit.getPluginManager().disablePlugin(this);
+            return;
+        }
+        getCommand("done").setExecutor(this);
+        getCommand("done").setTabCompleter(this);
+
+        // 설정 파일 로드
         try {
             loadConfig();
         } catch (Exception e) {
             Logger.error("설정 파일을 불러오는 중 오류가 발생했습니다.");
-            Logger.debug(e.getMessage());
+            Logger.debug("오류 상세: " + e.getMessage());
             Logger.error("플러그인을 종료합니다.");
             Bukkit.getPluginManager().disablePlugin(this);
-
             return;
         }
 
-        try {
-            connectChzzkList();
-        } catch (InterruptedException e) {
-            Logger.error("치지직 채팅에 연결 중 오류가 발생했습니다.");
-            Bukkit.getPluginManager().disablePlugin(this);
+        // 외부 데이터 연동
+        connectChzzkList();
+        connectSoopList();
 
-            return;
-        }
+        // Sheet 객체 생성 후 데이터 가져오기 (비동기 실행)
+        sheet = new Sheet(this);
+        Bukkit.getScheduler().runTaskAsynchronously(this, () -> sheet.fetchAndSaveData()); // 비동기 실행
 
-        try {
-            connectSoopList();
-        } catch (InterruptedException e) {
-            Logger.error("숲 채팅에 연결 중 오류가 발생했습니다.");
-            Bukkit.getPluginManager().disablePlugin(this);
-
-            return;
-        }
+        // 방송 상태 감지 스케줄러 실행
+        startLiveStatusChecker();
 
         Logger.info(ChatColor.GREEN + "플러그인 활성화 완료.");
     }
 
     @Override
     public void onDisable() {
-        try {
-            disconnectChzzkList();
-            disconnectSoopList();
-        } catch (InterruptedException e) {
-            Logger.error("플러그인 비활성화 중 오류가 발생했습니다.");
-        }
-
+        disconnectChzzkList();
+        disconnectSoopList();
         Logger.info(ChatColor.GREEN + "플러그인 비활성화 완료.");
     }
 
@@ -97,177 +97,164 @@ public final class DoneConnector extends JavaPlugin implements Listener {
     }
 
     private void loadConfig() throws DoneException {
-        this.saveResource("config.yml", false);
-        
+        // 기본 config.yml 로드
+        this.saveDefaultConfig();
         FileConfiguration config = this.getConfig();
 
-        try {
-            debug = config.getBoolean("디버그");
-            random = config.getBoolean("랜덤 보상");
-            if (config.contains("숲풍선갯수로출력")) {
-                poong = config.getBoolean("숲풍선갯수로출력");
-            }
-        } catch (Exception e) {
-            throw new DoneException(ExceptionCode.CONFIG_LOAD_ERROR);
+        // done.yml 추가 로드
+        File doneFile = new File(getDataFolder(), "done.yml");
+        if (!doneFile.exists()) {
+            saveResource("done.yml", false);
         }
+        FileConfiguration doneConfig = YamlConfiguration.loadConfiguration(doneFile);
 
         try {
-            Logger.info("치지직 아이디 로드 중...");
-            Set<String> nicknameList = Objects.requireNonNull(config.getConfigurationSection("치지직"))
-                    .getKeys(false);
-            Logger.debug(nicknameList.toString());
-
-            for (String nickname : nicknameList) {
-                Logger.debug("치지직 닉네임: " + nickname);
-                String id = config.getString("치지직." + nickname + ".식별자");
-                Logger.debug("치지직 아이디: " + id);
-                String tag = config.getString("치지직." + nickname + ".마크닉네임");
-                Logger.debug("치지직 마크닉네임: " + tag);
-
-                if (id == null || tag == null) {
-                    throw new DoneException(ExceptionCode.ID_NOT_FOUND);
-                }
-
-                Map<String, String> userMap = new HashMap<>();
-                userMap.put("nickname", nickname);
-                userMap.put("id", id);
-                userMap.put("tag", tag);
-                chzzkUserList.add(userMap);
-
-                Logger.debug("치지직 유저: " + userMap);
+            // done.yml 값 불러오기
+            debug = doneConfig.getBoolean("디버그");
+            random = doneConfig.getBoolean("랜덤 보상");
+            if (doneConfig.contains("숲풍선갯수로출력")) {
+                poong = doneConfig.getBoolean("숲풍선갯수로출력");
             }
-        } catch (Exception e) {
-            throw new DoneException(ExceptionCode.ID_NOT_FOUND);
-        }
 
-        Logger.info(ChatColor.GREEN + "치지직 아이디 " + chzzkUserList.size() + "개 로드 완료.");
-
-        try {
-            Logger.debug("숲 아이디 로드 중...");
-            Set<String> nicknameList = new HashSet<>();
-            if (this.getConfig().getConfigurationSection("숲") != null) {
-                nicknameList.addAll(this.getConfig().getConfigurationSection("숲").getKeys(false));
+            // 후원 보상 로드
+            Logger.info("후원 보상 로드 중...");
+            for (String price : Objects.requireNonNull(doneConfig.getConfigurationSection("후원 보상")).getKeys(false)) {
+                donationRewards.put(Integer.valueOf(price), doneConfig.getStringList("후원 보상." + price));
             }
-            if (this.getConfig().getConfigurationSection("아프리카") != null) {
-                nicknameList.addAll(this.getConfig().getConfigurationSection("아프리카").getKeys(false));
+
+            if (donationRewards.isEmpty()) {
+                throw new DoneException(ExceptionCode.REWARD_NOT_FOUND);
             }
-            Logger.debug(nicknameList.toString());
 
-            for (String nickname : nicknameList) {
-                Logger.debug("숲 닉네임: " + nickname);
-                if (config.getString("숲." + nickname + ".식별자") != null) {
-                    String id = config.getString("숲." + nickname + ".식별자");
-                    Logger.debug("숲 아이디: " + id);
-                    String tag = config.getString("숲." + nickname + ".마크닉네임");
-                    Logger.debug("숲 마크닉네임: " + tag);
-
-                    if (id == null || tag == null) {
-                        throw new DoneException(ExceptionCode.ID_NOT_FOUND);
-                    }
-
-                    Map<String, String> userMap = new HashMap<>();
-                    userMap.put("nickname", nickname);
-                    userMap.put("id", id);
-                    userMap.put("tag", tag);
-                    soopUserList.add(userMap);
-                    Logger.debug("숲 유저: " + userMap);
-                } else if (config.getString("아프리카." + nickname + ".식별자") != null) {
-                    // TODO: 하위호환용, 추후 제거.
-                    String id = config.getString("아프리카." + nickname + ".식별자");
-                    Logger.debug("아프리카 아이디: " + id);
-                    String tag = config.getString("아프리카." + nickname + ".마크닉네임");
-                    Logger.debug("아프리카 마크닉네임: " + tag);
-
-                    if (id == null || tag == null) {
-                        throw new DoneException(ExceptionCode.ID_NOT_FOUND);
-                    }
-
-                    Map<String, String> userMap = new HashMap<>();
-                    userMap.put("nickname", nickname);
-                    userMap.put("id", id);
-                    userMap.put("tag", tag);
-                    soopUserList.add(userMap);
-                    Logger.debug("아프리카 유저: " + userMap);
-                }
-
-            }
-        } catch (Exception e) {
-            throw new DoneException(ExceptionCode.ID_NOT_FOUND);
-        }
-
-        Logger.info(ChatColor.GREEN + "숲 아이디 " + soopUserList.size() + "개 로드 완료.");
-
-        if (chzzkUserList.isEmpty() && soopUserList.isEmpty()) {
-            throw new DoneException(ExceptionCode.ID_NOT_FOUND);
-        }
-
-        try {
-            for (String price : Objects.requireNonNull(config.getConfigurationSection("후원 보상")).getKeys(false)) {
-                donationRewards.put(Integer.valueOf(price), this.getConfig().getStringList("후원 보상." + price));
-            }
+            Logger.info(ChatColor.GREEN + "후원 보상 목록 " + donationRewards.size() + "개 로드 완료.");
         } catch (Exception e) {
             throw new DoneException(ExceptionCode.REWARD_PARSE_ERROR);
         }
 
-        if (donationRewards.keySet().isEmpty()) {
-            throw new DoneException(ExceptionCode.REWARD_NOT_FOUND);
+        try {
+            // config.yml에서 치지직/숲 정보 불러오기
+            Logger.info("치지직 & 숲 아이디 로드 중...");
+            loadUsers(config, "치지직", chzzkUserList);
+            loadUsers(config, "숲", soopUserList);
+
+            if (chzzkUserList.isEmpty() && soopUserList.isEmpty()) {
+                throw new DoneException(ExceptionCode.ID_NOT_FOUND);
+            }
+
+        } catch (Exception e) {
+            throw new DoneException(ExceptionCode.ID_NOT_FOUND);
         }
 
-        Logger.info(ChatColor.GREEN + "후원 보상 목록 " + donationRewards.keySet().size() + "개 로드 완료.");
+        Logger.info(ChatColor.GREEN + "설정 파일 로드 완료.");
+    }
+
+    // 유저 데이터 로드하는 공통 함수 추가
+    private void loadUsers(FileConfiguration config, String section, List<Map<String, String>> userList) {
+        if (config.getConfigurationSection(section) == null) return;
+
+        Set<String> nicknameList = config.getConfigurationSection(section).getKeys(false);
+        for (String nickname : nicknameList) {
+            String id = config.getString(section + "." + nickname + ".식별자");
+            String tag = config.getString(section + "." + nickname + ".마크닉네임");
+
+            if (id == null || tag == null) continue;
+
+            Map<String, String> userMap = new HashMap<>();
+            userMap.put("nickname", nickname);
+            userMap.put("id", id);
+            userMap.put("tag", tag);
+            userList.add(userMap);
+
+            Logger.debug(section + " 유저: " + userMap);
+        }
     }
 
     private void disconnectByNickName(String target) {
         chzzkWebSocketList = chzzkWebSocketList.stream()
                 .filter(chzzkWebSocket -> {
-                    if (Objects.equals(chzzkWebSocket.getChzzkUser().get("nickname"), target) || Objects.equals(chzzkWebSocket.getChzzkUser().get("tag"), target)) {
-                        chzzkWebSocket.close();
+                    if (Objects.equals(chzzkWebSocket.getChzzkUser().get("nickname"), target) ||
+                            Objects.equals(chzzkWebSocket.getChzzkUser().get("tag"), target)) {
+
+                        try {
+                            chzzkWebSocket.close();
+                        } catch (Exception e) {
+                            Logger.warn("[Chzzk] 웹소켓 닫기 중 오류 발생: " + e.getMessage());
+                        }
+
+
                         return false;
                     }
                     return true;
                 })
                 .collect(Collectors.toList());
+
         soopWebSocketList = soopWebSocketList.stream()
                 .filter(soopWebSocket -> {
-                    if (Objects.equals(soopWebSocket.getSoopUser().get("nickname"), target) || Objects.equals(soopWebSocket.getSoopUser().get("tag"), target)) {
-                        soopWebSocket.close();
+                    if (Objects.equals(soopWebSocket.getSoopUser().get("nickname"), target) ||
+                            Objects.equals(soopWebSocket.getSoopUser().get("tag"), target)) {
+
+                        try {
+                            soopWebSocket.close();
+                        } catch (Exception e) {
+                            Logger.warn("[SOOP] 웹소켓 닫기 중 오류 발생: " + e.getMessage());
+                        }
+
+
                         return false;
                     }
                     return true;
                 })
                 .collect(Collectors.toList());
+    }
+
+    private boolean isChzzkLive(String chzzkId) {
+        try {
+            return ChzzkApi.isLive(chzzkId); // ChzzkApi에서 실제 방송 상태를 반환하도록 구현 필요
+        } catch (Exception e) {
+            Logger.error("치지직 방송 상태 확인 중 오류 발생: " + e.getMessage());
+            return false;
+        }
     }
 
     private boolean connectChzzk(Map<String, String> chzzkUser) {
         try {
             String chzzkId = chzzkUser.get("id");
+
+            if (!isChzzkLive(chzzkId)) {
+                Logger.info("[Chzzk][" + chzzkUser.get("nickname") + "] 현재 방송이 진행 중이지 않음.");
+                return false;
+            }
+
             String chatChannelId = ChzzkApi.getChatChannelId(chzzkId);
-
-            Logger.debug("채널 아이디 조회 완료: " + chatChannelId);
-
             String token = ChzzkApi.getAccessToken(chatChannelId);
             String accessToken = token.split(";")[0];
             String extraToken = token.split(";")[1];
 
-            Logger.debug("액세스 토큰 조회 완료: " + accessToken + ", " + extraToken);
-
-            ChzzkWebSocket webSocket = new ChzzkWebSocket("wss://kr-ss1.chat.naver.com/chat", chatChannelId, accessToken, extraToken, chzzkUser, donationRewards);
+            ChzzkWebSocket webSocket = new ChzzkWebSocket(
+                    "wss://kr-ss1.chat.naver.com/chat", chatChannelId, accessToken, extraToken, chzzkUser, donationRewards);
             webSocket.connect();
             chzzkWebSocketList.add(webSocket);
+
             return true;
         } catch (Exception e) {
-            Logger.error("[ChzzkWebsocket][" + chzzkUser.get("nickname") + "] 치지직 채팅에 연결 중 오류가 발생했습니다.");
+            Logger.error("[Chzzk][" + chzzkUser.get("nickname") + "] 방송 연결 중 오류 발생.");
             Logger.debug(e.getMessage());
             return false;
         }
     }
 
-    private void connectChzzkList() throws InterruptedException {
+    private void connectChzzkList() {
         for (Map<String, String> chzzkUser : chzzkUserList) {
-            connectChzzk(chzzkUser);
+            try {
+                connectChzzk(chzzkUser);
+            } catch (Exception e) {
+                Logger.error("[Chzzk][" + chzzkUser.get("nickname") + "] 연결 중 오류 발생: " + e.getMessage());
+            }
         }
     }
 
-    private void disconnectChzzkList() throws InterruptedException {
+
+    private void disconnectChzzkList() {
         for (ChzzkWebSocket webSocket : chzzkWebSocketList) {
             webSocket.close();
         }
@@ -275,8 +262,22 @@ public final class DoneConnector extends JavaPlugin implements Listener {
         chzzkWebSocketList.clear();
     }
 
-    private boolean connectSoop(Map<String, String> soopUser) throws InterruptedException {
+    private boolean isSoopLive(String soopId) {
+        try {
+            return SoopApi.isLive(soopId); // SoopApi에서 실제 방송 상태를 반환하도록 구현 필요
+        } catch (Exception e) {
+            Logger.error("숲 방송 상태 확인 중 오류 발생: " + e.getMessage());
+            return false;
+        }
+    }
+
+    private boolean connectSoop(Map<String, String> soopUser) {
         String soopId = soopUser.get("id");
+
+        if (!isSoopLive(soopId)) {
+            Logger.info("[Soop][" + soopUser.get("nickname") + "] 현재 방송이 진행 중이지 않음.");
+            return false;
+        }
 
         try {
             SoopLiveInfo liveInfo = SoopApi.getPlayerLive(soopId);
@@ -284,24 +285,31 @@ public final class DoneConnector extends JavaPlugin implements Listener {
                     Collections.emptyList(),
                     Collections.singletonList(new Protocol("chat"))
             );
-            SoopWebSocket webSocket = new SoopWebSocket("wss://" + liveInfo.CHDOMAIN() + ":" + liveInfo.CHPT() + "/Websocket/" + liveInfo.BJID(), draft6455, liveInfo, soopUser, donationRewards, poong);
+            SoopWebSocket webSocket = new SoopWebSocket(
+                    "wss://" + liveInfo.CHDOMAIN() + ":" + liveInfo.CHPT() + "/Websocket/" + liveInfo.BJID(),
+                    draft6455, liveInfo, soopUser, donationRewards, poong);
             webSocket.connect();
             soopWebSocketList.add(webSocket);
+
             return true;
         } catch (Exception e) {
-            Logger.error("[SoopWebsocket][" + soopUser.get("nickname") + "] 숲 채팅에 연결 중 오류가 발생했습니다.");
+            Logger.error("[Soop][" + soopUser.get("nickname") + "] 숲 채팅 연결 중 오류 발생.");
             Logger.debug(e.getMessage());
             return false;
         }
     }
 
-    private void connectSoopList() throws InterruptedException {
+    private void connectSoopList() {
         for (Map<String, String> soopUser : soopUserList) {
-            connectSoop(soopUser);
+            try {
+                connectSoop(soopUser);
+            } catch (Exception e) {
+                Logger.error("[Soop][" + soopUser.get("nickname") + "] 연결 중 오류 발생: " + e.getMessage());
+            }
         }
     }
 
-    private void disconnectSoopList() throws InterruptedException {
+    private void disconnectSoopList() {
         for (SoopWebSocket webSocket : soopWebSocketList) {
             webSocket.close();
         }
@@ -421,13 +429,41 @@ public final class DoneConnector extends JavaPlugin implements Listener {
 
             } else if (cmd.equalsIgnoreCase("reload")) {
                 Logger.warn("후원 설정을 다시 불러옵니다.");
+                // Google Sheets 설정 리로드
+                sheet.reloadSheetConfig();
+
+                // 최신 데이터 가져오기
+                Bukkit.getScheduler().runTaskAsynchronously(this, () -> {
+                    sheet.fetchAndSaveData();
+                    Logger.info(ChatColor.GREEN + "[Sheet] Google Sheets 데이터 리로드 완료!");
+                });
+
+                sender.sendMessage(ChatColor.GREEN + "[Sheet] Google Sheets 데이터가 성공적으로 리로드되었습니다!");
+
                 disconnectChzzkList();
                 disconnectSoopList();
+
                 clearConfig();
                 loadConfig();
+
                 connectChzzkList();
                 connectSoopList();
-            } else {
+
+            } else if (cmd.equalsIgnoreCase("ymlreload")) {
+                Logger.warn("[Sheet] Google Sheets 데이터를 다시 불러옵니다.");
+
+                // Google Sheets 설정 리로드
+                sheet.reloadSheetConfig();
+
+                // 최신 데이터 가져오기
+                Bukkit.getScheduler().runTaskAsynchronously(this, () -> {
+                    sheet.fetchAndSaveData();
+                    Logger.info(ChatColor.GREEN + "[Sheet] Google Sheets 데이터 리로드 완료!");
+                });
+
+                sender.sendMessage(ChatColor.GREEN + "[Sheet] Google Sheets 데이터가 성공적으로 리로드되었습니다!");
+
+        } else {
                 return false;
             }
         } catch (Exception e) {
@@ -449,7 +485,7 @@ public final class DoneConnector extends JavaPlugin implements Listener {
         }
 
         if (args.length == 1) {
-            List<String> commandList = new ArrayList<>(Arrays.asList("on", "off", "reconnect", "reload", "add"));
+            List<String> commandList = new ArrayList<>(Arrays.asList("on", "off", "reconnect", "reload", "add", "ymlreload"));
 
             if (args[0].isEmpty()) {
                 return commandList;
@@ -472,5 +508,71 @@ public final class DoneConnector extends JavaPlugin implements Listener {
         }
 
         return Collections.emptyList();
+    }
+
+    private void checkAndConnectLiveStreams() {
+        for (Map<String, String> chzzkUser : chzzkUserList) {
+            String chzzkId = chzzkUser.get("id");
+            String minecraftName = chzzkUser.get("tag");
+            boolean isLive = isChzzkLive(chzzkId);
+
+            // 기존 방송 상태 확인 (없으면 기본값 false)
+            boolean wasLive = liveStatus.getOrDefault(chzzkId, false);
+
+            if (isLive && !wasLive) { // 방송이 시작됨
+                Logger.info("[Chzzk][" + chzzkUser.get("nickname") + "] 방송이 시작되었습니다! 연결 시도...");
+                connectChzzk(chzzkUser);
+                Bukkit.getScheduler().runTask(this, () -> {
+                    Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "방송켜짐 " + minecraftName);
+                });
+            } else if (!isLive && wasLive) { // 방송이 종료됨
+                Logger.info("[Chzzk][" + chzzkUser.get("nickname") + "] 방송이 종료되었습니다! 연결 해제...");
+                disconnectByNickName(chzzkUser.get("nickname"));
+                Bukkit.getScheduler().runTask(this, () -> {
+                    Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "방송꺼짐 " + minecraftName);
+                });
+            }
+
+            // 현재 방송 상태 업데이트
+            liveStatus.put(chzzkId, isLive);
+        }
+
+        for (Map<String, String> soopUser : soopUserList) {
+            String soopId = soopUser.get("id");
+            String minecraftName = soopUser.get("tag");
+            boolean isLive = isSoopLive(soopId);
+            boolean wasLive = liveStatus.getOrDefault(soopId, false);
+
+            if (isLive && !wasLive) { // 방송이 시작됨
+                Logger.info("[Soop][" + soopUser.get("nickname") + "] 방송이 시작되었습니다! 연결 시도...");
+                try {
+                    connectSoop(soopUser);
+                } catch (Exception e) {
+                    Logger.error("[Soop][" + soopUser.get("nickname") + "] 연결 중 오류 발생: " + e.getMessage());
+                }
+                Bukkit.getScheduler().runTask(this, () -> {
+                    Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "방송켜짐 " + minecraftName);
+                });
+            } else if (!isLive && wasLive) { // 방송이 종료됨
+                Logger.info("[Soop][" + soopUser.get("nickname") + "] 방송이 종료되었습니다! 연결 해제...");
+                disconnectByNickName(soopUser.get("nickname"));
+                Bukkit.getScheduler().runTask(this, () -> {
+                    Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "방송꺼짐 " + minecraftName);
+                });
+            }
+
+            // 현재 방송 상태 업데이트
+            liveStatus.put(soopId, isLive);
+        }
+    }
+
+    private void startLiveStatusChecker() {
+        Bukkit.getScheduler().runTaskTimerAsynchronously(this, () -> {
+            try {
+                checkAndConnectLiveStreams();
+            } catch (Exception e) {
+                Logger.error("방송 상태 확인 중 오류 발생: " + e.getMessage());
+            }
+        }, 0L, 20L * 5); // 5초마다 실행
     }
 }
