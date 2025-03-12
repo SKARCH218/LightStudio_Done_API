@@ -8,8 +8,11 @@ taromati 의 done-connector 플러그인을 포크하였음을 알립니다.
 Java 버전: 21
 
 ## **Google Sheet 연동**
-LightStudio_Done_API 플러그인은 구글시트를 이용하여 손쉽게 유저를 추가할수 있습니다.
+LightStudio_Done_API 플러그인은 구글시트를 이용하여 손쉽게 유저를 추가 또는 관리 할수 있습니다.
 `config.yml`에서 `SheetMode`를 true 로 설정후 서버를 재시작 하세요
+
+구글 시트만 지원되며 구글 시트에서 다음과 같이 양식을 추가하거나 아래의 시트를 복제 하세요
+https://docs.google.com/spreadsheets/d/1Lk8A28KqU0TsMIdbobfKzKCzzfKzxoxl0C7tLltcTQc/edit?gid=0#gid=0
 
 주의 사항
 이 기능을 활성화시 반드시 구글 시트를 이용해서 유저를 추가하세요
