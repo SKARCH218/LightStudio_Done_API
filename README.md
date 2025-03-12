@@ -1,4 +1,8 @@
-# Minecraft Chzzk / Soop 후원 연동 플러그인
+# **LightStudio_Done_API**
+이 플러그인은 팀 라이트스튜디오 에서 제작했으며
+taromati 의 done-connector 플러그인을 포크하였음을 알립니다.
+
+## Minecraft Chzzk / Soop 후원 연동 플러그인
 
 ## **지원 버전**
 Java 버전: 21
