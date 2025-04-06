@@ -1,8 +1,8 @@
-package me.taromati.doneconnector.soop;
+package me.LightStudio.DoneAPI.soop;
 
-import me.taromati.doneconnector.Logger;
-import me.taromati.doneconnector.exception.DoneException;
-import me.taromati.doneconnector.exception.ExceptionCode;
+import me.LightStudio.DoneAPI.Logger;
+import me.LightStudio.DoneAPI.exception.DoneException;
+import me.LightStudio.DoneAPI.exception.ExceptionCode;
 import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
 

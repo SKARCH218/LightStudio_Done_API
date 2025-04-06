@@ -1,4 +1,4 @@
-package me.taromati.doneconnector.soop;
+package me.LightStudio.DoneAPI.soop;
 
 import lombok.Getter;
 

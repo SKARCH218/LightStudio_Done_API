@@ -1,8 +1,32 @@
 name: LightStudio_Done_API
 version: '${version}'
-main: me.taromati.doneconnector.DoneConnector
-api-version: '1.0'
+main: me.LightStudio.DoneAPI.DoneConnector
+api-version: '1.20'
+
 commands:
   done:
-    description: 후원 기능 상태를 변경.
-    usage: /<command> [on|off|reconnect|reload|add|ymlreload]
+    description: 후원 기능을 제어하는 명령어
+    usage: "/done [on|off|reconnect|reload|add|sheetreload]"
+    permission: op
+    permission-message: "이 명령어를 사용할 권한이 없습니다."
+
+  api:
+    description: "자신의 마크 닉네임과 연결된 방송 플랫폼의 상태를 확인합니다."
+    usage: "/api"
+    permission: api.use
+    permission-message: "이 명령어를 사용할 권한이 없습니다."
+
+  방송정보:
+    description: "플레이어의 방송 정보를 확인합니다."
+    usage: "/방송정보 <플레이어 닉네임>"
+    permission: broadcastinfo.use
+    permission-message: "이 명령어를 사용할 권한이 없습니다."
+
+permissions:
+  api.use:
+    description: "자신의 방송 상태를 확인할 수 있는 권한"
+    default: true
+
+  broadcastinfo.use:
+    description: "다른 플레이어의 방송 정보를 확인할 수 있는 권한"
+    default: true

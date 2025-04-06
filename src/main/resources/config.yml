@@ -1,8 +1,13 @@
-치지직:
-  루나핀:
-    식별자: affa78deac0b23d2046b8ed4856c1e62
-    마크닉네임: lunapin
-숲:
-  루나핀:
-    식별자: lupin0
-    마크닉네임: lunapin
+# 이 모드를 true 로 할시 구글시트 연동이 활성화 됩니다.
+# 구글시트에서 편하게 관리가 가능합니다.
+# 자세한 내용은 "sheet.yml" 을 참조하세요
+SheetMode: false
+
+# 이 모드를 true 로 설정할시 방송을 킬때마다 명령어가 실행합니다. 원하는 작업을 Skript 또는 Plugin 으로 만드십시오.
+# 방송이 켜졌을때: /방송켜짐 <player>
+# 방송이 꺼졌을때: /방송꺼짐 <player>
+MarkLive: false
+
+# 이 모드를 true 로 할시 추가한 스트리머에게 자동으로 화이트 리스트가 부여됩니다.
+# 로직순서 /done reload -> 서버 화이트리스트 초기화 -> user.yml 내용 수집 -> 플레이어 화이트리스트 추가
+WhiteList: false

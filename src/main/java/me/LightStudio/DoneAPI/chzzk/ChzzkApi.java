@@ -1,7 +1,7 @@
-package me.taromati.doneconnector.chzzk;
+package me.LightStudio.DoneAPI.chzzk;
 
-import me.taromati.doneconnector.exception.DoneException;
-import me.taromati.doneconnector.exception.ExceptionCode;
+import me.LightStudio.DoneAPI.exception.DoneException;
+import me.LightStudio.DoneAPI.exception.ExceptionCode;
 import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
 
@@ -30,7 +30,21 @@ public class ChzzkApi {
             if (response.statusCode() == 200) {
                 JSONParser parser = new JSONParser();
                 JSONObject jsonObject = (JSONObject) parser.parse(response.body());
-                return ((JSONObject) jsonObject.get("content")).get("chatChannelId").toString();
+
+                Object contentObj = jsonObject.get("content");
+
+                if (contentObj == null) {
+                    throw new DoneException(ExceptionCode.API_CHAT_CHANNEL_ID_ERROR); // content가 없으면 예외
+                }
+
+                JSONObject content = (JSONObject) contentObj;
+                Object chatChannelIdObj = content.get("chatChannelId");
+
+                if (chatChannelIdObj == null) {
+                    throw new DoneException(ExceptionCode.API_CHAT_CHANNEL_ID_ERROR); // chatChannelId가 없으면 예외
+                }
+
+                return chatChannelIdObj.toString();
             } else {
                 throw new DoneException(ExceptionCode.API_CHAT_CHANNEL_ID_ERROR);
             }
@@ -56,45 +70,50 @@ public class ChzzkApi {
                 JSONParser parser = new JSONParser();
                 JSONObject jsonObject = (JSONObject) parser.parse(response.body());
 
-                // "content" 키가 없으면 방송 중이 아님
-                if (!jsonObject.containsKey("content")) {
-                    //Bukkit.getConsoleSender().sendMessage(ChatColor.RED + "[ChzzkApi] API 응답에 'content' 키가 없습니다.");
+                // "content" 키가 없거나 null이면 방송 중이 아님
+                if (!jsonObject.containsKey("content") || jsonObject.get("content") == null) {
+                    //Bukkit.getConsoleSender().sendMessage(ChatColor.RED + "[ChzzkApi] API 응답에 'content' 키가 없거나 null입니다.");
                     return false;
                 }
 
                 JSONObject content = (JSONObject) jsonObject.get("content");
 
                 // "status" 확인 (방송이 진행 중이면 "OPEN")
-                String status = (String) content.get("status");
-                if (!"OPEN".equalsIgnoreCase(status)) {
-                    //Bukkit.getConsoleSender().sendMessage(ChatColor.YELLOW + "[ChzzkApi] 방송 상태: " + status + " (방송이 열려있지 않음)");
+                Object statusObj = content.get("status");
+                if (statusObj == null || !"OPEN".equalsIgnoreCase(statusObj.toString())) {
+                    //Bukkit.getConsoleSender().sendMessage(ChatColor.YELLOW + "[ChzzkApi] 방송 상태가 'OPEN'이 아닙니다: " + statusObj);
                     return false;
                 }
 
                 // "livePollingStatusJson" 확인
-                if (content.containsKey("livePollingStatusJson")) {
-                    JSONObject livePollingStatus = (JSONObject) parser.parse((String) content.get("livePollingStatusJson"));
-                    boolean isPublishing = (boolean) livePollingStatus.get("isPublishing");
+                Object livePollingStatusJsonObj = content.get("livePollingStatusJson");
+                if (livePollingStatusJsonObj != null) {
+                    JSONObject livePollingStatus = (JSONObject) parser.parse(livePollingStatusJsonObj.toString());
+                    Object isPublishingObj = livePollingStatus.get("isPublishing");
 
-                    if (isPublishing) {
-                        //Bukkit.getConsoleSender().sendMessage(ChatColor.GREEN + "[ChzzkApi] 방송이 진행 중입니다.");
+                    if (isPublishingObj instanceof Boolean && (Boolean) isPublishingObj) {
+                        //Bukkit.getConsoleSender().sendMessage(ChatColor.GREEN + "[ChzzkApi] 방송이 진행 중입니다 (isPublishing=true).");
                         return true;
                     } else {
-                        //Bukkit.getConsoleSender().sendMessage(ChatColor.YELLOW + "[ChzzkApi] 방송 상태: isPublishing = false (방송 중이 아님)");
+                        //Bukkit.getConsoleSender().sendMessage(ChatColor.YELLOW + "[ChzzkApi] 방송이 열려있지만 isPublishing=false 입니다.");
                         return false;
                     }
                 }
 
-                Bukkit.getConsoleSender().sendMessage(ChatColor.YELLOW + "[ChzzkApi] 'livePollingStatusJson'이 없습니다. 방송 상태를 확인할 수 없음.");
+                // "livePollingStatusJson" 자체가 없으면 기본적으로 false
+                //Bukkit.getConsoleSender().sendMessage(ChatColor.YELLOW + "[ChzzkApi] 'livePollingStatusJson'이 없습니다. 방송 상태를 정확히 확인할 수 없습니다.");
+                return false;
+            } else {
+                // HTTP 응답이 200이 아니면 실패로 처리
+                //Bukkit.getConsoleSender().sendMessage(ChatColor.RED + "[ChzzkApi] API 요청 실패. 상태 코드: " + response.statusCode());
                 return false;
             }
         } catch (Exception e) {
-            //Bukkit.getConsoleSender().sendMessage(ChatColor.RED + "[ChzzkApi] API 요청 실패: " + e.getMessage());
-            e.printStackTrace();
+            // 요청 실패하거나 파싱 실패 등 모든 에러는 false 반환
+            //Bukkit.getConsoleSender().sendMessage(ChatColor.RED + "[ChzzkApi] 예외 발생: " + e.getMessage());
+            return false;
         }
-        return false;
     }
-
 
     public static String getAccessToken(String chatChannelId) {
         String requestURL = "https://comm-api.game.naver.com/nng_main/v1/chats/access-token?channelId=" + chatChannelId + "&chatType=STREAMING";

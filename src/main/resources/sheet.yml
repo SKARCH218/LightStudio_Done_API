@@ -1,0 +1,9 @@
+# 사용전에 반드시 알아야 하는것
+# 링크는 반드시 모든사람이 이용가능한 상태의 권한으로 설정 해놓아야 합니다.
+# Sheet 의 양식을 알려면 다음 링크로 이동하세요
+# https://docs.google.com/spreadsheets/d/1Lk8A28KqU0TsMIdbobfKzKCzzfKzxoxl0C7tLltcTQc/edit?usp=sharing
+# 시트아이디는 다음 링크중 "1Lk8A28KqU0TsMIdbobfKzKCzzfKzxoxl0C7tLltcTQc" 입니다.
+# 시트값을 플러그인에 업데이트 시키려면 /done reload 를 사용하세요
+
+google-sheet:
+  sheet-id: "1Lk8A28KqU0TsMIdbobfKzKCzzfKzxoxl0C7tLltcTQc"

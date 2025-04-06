@@ -1,4 +1,4 @@
-package me.taromati.doneconnector.exception;
+package me.LightStudio.DoneAPI.exception;
 
 import lombok.Getter;
 

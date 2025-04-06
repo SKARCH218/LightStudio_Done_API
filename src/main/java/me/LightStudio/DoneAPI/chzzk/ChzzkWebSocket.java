@@ -1,8 +1,8 @@
-package me.taromati.doneconnector.chzzk;
+package me.LightStudio.DoneAPI.chzzk;
 
 import lombok.Getter;
-import me.taromati.doneconnector.DoneConnector;
-import me.taromati.doneconnector.Logger;
+import me.LightStudio.DoneAPI.DoneConnector;
+import me.LightStudio.DoneAPI.Logger;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.java_websocket.client.WebSocketClient;

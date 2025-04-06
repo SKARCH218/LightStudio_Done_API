@@ -1,4 +1,4 @@
-package me.taromati.doneconnector;
+package me.LightStudio.DoneAPI;
 
 import org.bukkit.ChatColor;
 import org.bukkit.configuration.file.FileConfiguration;
@@ -28,12 +28,12 @@ public class Sheet {
         this.plugin = plugin;
 
         // config.yml 파일 경로 설정
-        this.configFile = new File(plugin.getDataFolder(), "config.yml");
+        this.configFile = new File(plugin.getDataFolder(), "user.yml");
 
-        // Sheet.yml 로드
-        this.sheetConfigFile = new File(plugin.getDataFolder(), "Sheet.yml");
+        // sheet.yml 로드
+        this.sheetConfigFile = new File(plugin.getDataFolder(), "sheet.yml");
         if (!sheetConfigFile.exists()) {
-            plugin.saveResource("Sheet.yml", false);
+            plugin.saveResource("sheet.yml", false);
         }
         this.sheetConfig = YamlConfiguration.loadConfiguration(sheetConfigFile);
 
@@ -56,7 +56,7 @@ public class Sheet {
         try {
             sheetConfig.save(sheetConfigFile);
         } catch (IOException e) {
-            plugin.getLogger().severe("[Sheet] Sheet.yml 저장 중 오류 발생: " + e.getMessage());
+            plugin.getLogger().severe("[Sheet] sheet.yml 저장 중 오류 발생: " + e.getMessage());
         }
     }
 
@@ -64,9 +64,9 @@ public class Sheet {
         try {
             sheetConfig.load(sheetConfigFile); // 기존 객체 유지하면서 새 데이터 로드
             loadSheetConfig();
-            plugin.getLogger().info(ChatColor.GREEN + "[Sheet] Sheet.yml이 리로드되었습니다!");
+            plugin.getLogger().info(ChatColor.GREEN + "[Sheet] sheet.yml이 리로드되었습니다!");
         } catch (Exception e) {
-            plugin.getLogger().severe("[Sheet] Sheet.yml을 다시 로드하는 중 오류 발생: " + e.getMessage());
+            plugin.getLogger().severe("[Sheet] sheet.yml을 다시 로드하는 중 오류 발생: " + e.getMessage());
         }
     }
 
@@ -85,7 +85,7 @@ public class Sheet {
             // 첫 번째 행(헤더) 추출
             String[] headers = csvData.get(0);
 
-            // ★ config.yml 초기화 (기존 데이터 삭제)
+            // ★ user.yml 초기화 (기존 데이터 삭제)
             config = new YamlConfiguration(); // 새로운 빈 YAML 객체 생성
 
             // CSV 데이터를 HashMap 및 YAML에 저장
@@ -124,7 +124,7 @@ public class Sheet {
                 }
             }
 
-            // config.yml 저장
+            // user.yml 저장
             saveConfigFile();
             plugin.getLogger().info(ChatColor.GREEN + "[Sheet] Google Sheets 데이터가 업데이트되었습니다!");
 
@@ -199,7 +199,7 @@ public class Sheet {
         try {
             config.save(configFile);
         } catch (IOException e) {
-            plugin.getLogger().severe("[Sheet] config.yml 저장 중 오류 발생: " + e.getMessage());
+            plugin.getLogger().severe("[Sheet] user.yml 저장 중 오류 발생: " + e.getMessage());
         }
     }
 }
