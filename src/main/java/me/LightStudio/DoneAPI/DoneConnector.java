@@ -494,6 +494,14 @@ public final class DoneConnector extends JavaPlugin implements Listener {
                         loadUsersAndConnectAsync();
                         sender.sendMessage(ChatColor.GREEN + "[Done] 설정이 성공적으로 리로드되었습니다!");
 
+                        if (WhiteList) {
+                            refreshWhitelistAsync();
+                        }
+
+                        if (WhiteList) {
+                            refreshWhitelistAsync();
+                        }
+
                         if (SheetMode) { // sheetMode가 true일 때만 실행
                             sheet = new Sheet(this);
                             Bukkit.getScheduler().runTaskAsynchronously(this, () -> sheet.fetchAndSaveData()); // 비동기 실행
@@ -659,6 +667,11 @@ public final class DoneConnector extends JavaPlugin implements Listener {
                 connectChzzkList();
                 connectSoopList();
 
+                // 화이트리스트 새로고침 (비동기적으로 호출)
+                if (WhiteList) {
+                    refreshWhitelistAsync();
+                }
+
                 Logger.info(ChatColor.GREEN + "유저 정보 및 웹소켓 연결 완료.");
 
             } catch (Exception e) {
@@ -718,5 +731,56 @@ public final class DoneConnector extends JavaPlugin implements Listener {
             player.kickPlayer(ChatColor.RED + "등록되지 않은 플레이어입니다."); // 플레이어 추방
             Logger.info(ChatColor.YELLOW + playerName + "님이 등록되지 않은 플레이어로 접속을 시도하여 차단되었습니다.");
         }
+    }
+
+    public void refreshWhitelistAsync() {
+        // config.yml 읽기
+        FileConfiguration config = plugin.getConfig();
+        if (!config.getBoolean("WhiteList", false)) {
+            return; // 화이트리스트 기능 꺼져있으면 무시
+        }
+
+            // 1. 기존 화이트리스트 초기화
+            for (OfflinePlayer player : Bukkit.getWhitelistedPlayers()) {
+                player.setWhitelisted(false);
+            }
+
+            // 2. user.yml 읽기
+            File userFile = new File(plugin.getDataFolder(), "user.yml");
+            if (!userFile.exists()) {
+                plugin.getLogger().warning("user.yml 파일을 찾을 수 없습니다!");
+                return;
+            }
+            FileConfiguration userConfig = YamlConfiguration.loadConfiguration(userFile);
+
+            // 3. 데이터 탐색
+            ConfigurationSection rootSection = userConfig.getConfigurationSection("");
+            if (rootSection == null) {
+                plugin.getLogger().warning("user.yml 안에 데이터가 없습니다!");
+                return;
+            }
+
+            for (String key : rootSection.getKeys(false)) { // 예: "치지직"
+                ConfigurationSection groupSection = rootSection.getConfigurationSection(key);
+                if (groupSection == null) continue;
+
+                for (String subKey : groupSection.getKeys(false)) { // 예: "스카치"
+                    ConfigurationSection playerSection = groupSection.getConfigurationSection(subKey);
+                    if (playerSection == null) continue;
+
+                    String mcName = playerSection.getString("마크닉네임");
+                    if (mcName != null && !mcName.isEmpty()) {
+                        // 마인크래프트 닉네임 유효성 검사 (영문, 숫자, 밑줄만 허용)
+                        if (!mcName.matches("^[a-zA-Z0-9_]{3,16}$")) {
+                            plugin.getLogger().warning("유효하지 않은 마인크래프트 닉네임이 감지되었습니다: " + mcName + " (화이트리스트에서 제외됩니다)");
+                            continue; // 유효하지 않은 닉네임은 건너뜁니다.
+                        }
+                        OfflinePlayer offlinePlayer = Bukkit.getOfflinePlayer(mcName);
+                        offlinePlayer.setWhitelisted(true);
+                        plugin.getLogger().info("화이트리스트 추가됨: " + mcName);
+                    }
+                }
+            }
+            Logger.info(ChatColor.GREEN + "화이트리스트 새로고침 완료.");
     }
 }
