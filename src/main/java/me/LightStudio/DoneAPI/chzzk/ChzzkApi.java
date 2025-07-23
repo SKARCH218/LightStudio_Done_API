@@ -16,17 +16,18 @@ import java.util.concurrent.CompletableFuture;
 
 public class ChzzkApi {
 
+    private static final HttpClient HTTP_CLIENT = HttpClient.newHttpClient();
+
     public static CompletableFuture<String> getChatChannelId(String id) {
         String requestURL = "https://api.chzzk.naver.com/polling/v2/channels/" + id + "/live-status";
 
-        HttpClient client = HttpClient.newHttpClient();
         HttpRequest request = HttpRequest.newBuilder()
                 .method("GET", HttpRequest.BodyPublishers.noBody())
                 .uri(URI.create(requestURL))
                 .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
                 .build();
 
-        return client.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+        return HTTP_CLIENT.sendAsync(request, HttpResponse.BodyHandlers.ofString())
                 .thenApply(response -> {
                     if (response.statusCode() == 200) {
                         try {
@@ -62,7 +63,7 @@ public class ChzzkApi {
     public static CompletableFuture<Boolean> isLive(String id) {
         String requestURL = "https://api.chzzk.naver.com/polling/v2/channels/" + id + "/live-status";
 
-        HttpClient client = HttpClient.newHttpClient();
+        HttpClient client = HTTP_CLIENT;
         HttpRequest request = HttpRequest.newBuilder()
                 .method("GET", HttpRequest.BodyPublishers.noBody())
                 .uri(URI.create(requestURL))
@@ -114,7 +115,7 @@ public class ChzzkApi {
     public static CompletableFuture<String> getAccessToken(String chatChannelId) {
         String requestURL = "https://comm-api.game.naver.com/nng_main/v1/chats/access-token?channelId=" + chatChannelId + "&chatType=STREAMING";
 
-        HttpClient client = HttpClient.newHttpClient();
+        HttpClient client = HTTP_CLIENT;
         HttpRequest request = HttpRequest.newBuilder()
                 .method("GET", HttpRequest.BodyPublishers.noBody())
                 .uri(URI.create(requestURL))

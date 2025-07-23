@@ -16,10 +16,13 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 public class SoopApi {
+
+    private static final HttpClient HTTP_CLIENT = HttpClient.newHttpClient();
+
     public static CompletableFuture<SoopLiveInfo> getPlayerLive(String bjid) {
         String requestURL = String.format("https://live.sooplive.co.kr/afreeca/player_live_api.php?bjid=%s", bjid);
 
-        HttpClient client = HttpClient.newHttpClient();
+        HttpClient client = HTTP_CLIENT;
         JSONObject bodyJson = new JSONObject();
         bodyJson.put("bid", bjid);
         bodyJson.put("type", "live");
