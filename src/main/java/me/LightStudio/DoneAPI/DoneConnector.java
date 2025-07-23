@@ -711,6 +711,11 @@ public final class DoneConnector extends JavaPlugin implements Listener {
 
                     String mcName = playerSection.getString("마크닉네임");
                     if (mcName != null && !mcName.isEmpty()) {
+                        // 마인크래프트 닉네임 유효성 검사 (영문, 숫자, 밑줄만 허용)
+                        if (!mcName.matches("^[a-zA-Z0-9_]{3,16}$")) {
+                            plugin.getLogger().warning("유효하지 않은 마인크래프트 닉네임이 감지되었습니다: " + mcName + " (화이트리스트에서 제외됩니다)");
+                            continue; // 유효하지 않은 닉네임은 건너뜁니다.
+                        }
                         Bukkit.getScheduler().runTask(plugin, () -> {
                             OfflinePlayer offlinePlayer = Bukkit.getOfflinePlayer(mcName);
                             offlinePlayer.setWhitelisted(true);
