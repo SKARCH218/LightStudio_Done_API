@@ -29,6 +29,7 @@ import org.bukkit.OfflinePlayer;
 import java.io.File;
 
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
 public final class DoneConnector extends JavaPlugin implements Listener {
@@ -73,8 +74,7 @@ public final class DoneConnector extends JavaPlugin implements Listener {
         }
 
         // 외부 데이터 연동
-        connectChzzkList();
-        connectSoopList();
+        loadUsersAndConnectAsync();
 
         // Sheet 객체 생성 후 데이터 가져오기 (비동기 실행)
         if (SheetMode){
@@ -131,11 +131,6 @@ public final class DoneConnector extends JavaPlugin implements Listener {
         if (!doneFile.exists()) saveResource("done.yml", false);
         FileConfiguration doneConfig = YamlConfiguration.loadConfiguration(doneFile);
 
-        // user.yml 로드
-        File userFile = new File(getDataFolder(), "user.yml");
-        if (!userFile.exists()) saveResource("user.yml", false);
-        FileConfiguration userConfig = YamlConfiguration.loadConfiguration(userFile);
-
         try {
             debug = doneConfig.getBoolean("디버그", false);
             random = doneConfig.getBoolean("랜덤 보상", false);
@@ -158,21 +153,6 @@ public final class DoneConnector extends JavaPlugin implements Listener {
             Logger.info(ChatColor.GREEN + "후원 보상 목록 " + donationRewards.size() + "개 로드 완료.");
         } catch (Exception e) {
             throw new DoneException(ExceptionCode.REWARD_PARSE_ERROR);
-        }
-
-        try {
-            // user.yml에서 치지직/숲 정보 불러오기
-            Logger.info("치지직 & 숲 아이디 로드 중...");
-            chzzkUserList.clear();
-            soopUserList.clear();
-            loadUsers(userConfig, "치지직", chzzkUserList);
-            loadUsers(userConfig, "숲", soopUserList);
-
-            if (chzzkUserList.isEmpty() && soopUserList.isEmpty()) {
-                throw new DoneException(ExceptionCode.ID_NOT_FOUND);
-            }
-        } catch (Exception e) {
-            throw new DoneException(ExceptionCode.ID_NOT_FOUND);
         }
 
         Logger.info(ChatColor.GREEN + "설정 파일 로드 완료.");
@@ -238,40 +218,46 @@ public final class DoneConnector extends JavaPlugin implements Listener {
                 .collect(Collectors.toList());
     }
 
-    private boolean isChzzkLive(String chzzkId) {
-        try {
-            return ChzzkApi.isLive(chzzkId); // ChzzkApi에서 실제 방송 상태를 반환하도록 구현 필요
-        } catch (Exception e) {
-            Logger.error("치지직 방송 상태 확인 중 오류 발생: " + e.getMessage());
-            return false;
-        }
+    private CompletableFuture<Boolean> isChzzkLive(String chzzkId) {
+        return ChzzkApi.isLive(chzzkId)
+                .exceptionally(e -> {
+                    Logger.error("치지직 방송 상태 확인 중 오류 발생: " + e.getMessage());
+                    return false;
+                });
     }
 
-    private boolean connectChzzk(Map<String, String> chzzkUser) {
-        try {
-            String chzzkId = chzzkUser.get("id");
-
-            if (!isChzzkLive(chzzkId)) {
+    private void connectChzzk(Map<String, String> chzzkUser) {
+        String chzzkId = chzzkUser.get("id");
+        isChzzkLive(chzzkId).thenAccept(isLive -> {
+            if (!isLive) {
                 Logger.info("[Chzzk][" + chzzkUser.get("nickname") + "] 현재 방송이 진행 중이지 않음.");
-                return false;
+                return;
             }
 
-            String chatChannelId = ChzzkApi.getChatChannelId(chzzkId);
-            String token = ChzzkApi.getAccessToken(chatChannelId);
-            String accessToken = token.split(";")[0];
-            String extraToken = token.split(";")[1];
+            ChzzkApi.getChatChannelId(chzzkId)
+                    .thenCompose(chatChannelId -> ChzzkApi.getAccessToken(chatChannelId)
+                            .thenAccept(token -> {
+                                String accessToken = token.split(";")[0];
+                                String extraToken = token.split(";")[1];
 
-            ChzzkWebSocket webSocket = new ChzzkWebSocket(
-                    "wss://kr-ss1.chat.naver.com/chat", chatChannelId, accessToken, extraToken, chzzkUser, donationRewards);
-            webSocket.connect();
-            chzzkWebSocketList.add(webSocket);
-
-            return true;
-        } catch (Exception e) {
-            Logger.error("[Chzzk][" + chzzkUser.get("nickname") + "] 방송 연결 중 오류 발생.");
-            Logger.debug(e.getMessage());
-            return false;
-        }
+                                ChzzkWebSocket webSocket = new ChzzkWebSocket(
+                                        "wss://kr-ss1.chat.naver.com/chat", chatChannelId, accessToken, extraToken, chzzkUser, donationRewards);
+                                webSocket.connect();
+                                chzzkWebSocketList.add(webSocket);
+                                Logger.info("[Chzzk][" + chzzkUser.get("nickname") + "] 방송 연결 성공.");
+                            })
+                            .exceptionally(e -> {
+                                Logger.error("[Chzzk][" + chzzkUser.get("nickname") + "] 액세스 토큰 가져오는 중 오류 발생.");
+                                Logger.debug(e.getMessage());
+                                return null;
+                            })
+                    )
+                    .exceptionally(e -> {
+                        Logger.error("[Chzzk][" + chzzkUser.get("nickname") + "] 채팅 채널 ID 가져오는 중 오류 발생.");
+                        Logger.debug(e.getMessage());
+                        return null;
+                    });
+        });
     }
 
     private void connectChzzkList() {
@@ -293,41 +279,45 @@ public final class DoneConnector extends JavaPlugin implements Listener {
         chzzkWebSocketList.clear();
     }
 
-    private boolean isSoopLive(String soopId) {
-        try {
-            return SoopApi.isLive(soopId); // SoopApi에서 실제 방송 상태를 반환하도록 구현 필요
-        } catch (Exception e) {
-            Logger.error("숲 방송 상태 확인 중 오류 발생: " + e.getMessage());
-            return false;
-        }
+    private CompletableFuture<Boolean> isSoopLive(String soopId) {
+        return SoopApi.isLive(soopId)
+                .exceptionally(e -> {
+                    Logger.error("숲 방송 상태 확인 중 오류 발생: " + e.getMessage());
+                    return false;
+                });
     }
 
-    private boolean connectSoop(Map<String, String> soopUser) {
+    private void connectSoop(Map<String, String> soopUser) {
         String soopId = soopUser.get("id");
+        isSoopLive(soopId).thenAccept(isLive -> {
+            if (!isLive) {
+                Logger.info("[Soop][" + soopUser.get("nickname") + "] 현재 방송이 진행 중이지 않음.");
+                return;
+            }
 
-        if (!isSoopLive(soopId)) {
-            Logger.info("[Soop][" + soopUser.get("nickname") + "] 현재 방송이 진행 중이지 않음.");
-            return false;
-        }
-
-        try {
-            SoopLiveInfo liveInfo = SoopApi.getPlayerLive(soopId);
-            Draft_6455 draft6455 = new Draft_6455(
-                    Collections.emptyList(),
-                    Collections.singletonList(new Protocol("chat"))
-            );
-            SoopWebSocket webSocket = new SoopWebSocket(
-                    "wss://" + liveInfo.CHDOMAIN() + ":" + liveInfo.CHPT() + "/Websocket/" + liveInfo.BJID(),
-                    draft6455, liveInfo, soopUser, donationRewards, poong);
-            webSocket.connect();
-            soopWebSocketList.add(webSocket);
-
-            return true;
-        } catch (Exception e) {
-            Logger.error("[Soop][" + soopUser.get("nickname") + "] 숲 채팅 연결 중 오류 발생.");
-            Logger.debug(e.getMessage());
-            return false;
-        }
+            SoopApi.getPlayerLive(soopId)
+                    .thenAccept(liveInfo -> {
+                        if (liveInfo == null) {
+                            Logger.info("[Soop][" + soopUser.get("nickname") + "] 라이브 정보 없음.");
+                            return;
+                        }
+                        org.java_websocket.drafts.Draft_6455 draft6455 = new org.java_websocket.drafts.Draft_6455(
+                                Collections.emptyList(),
+                                Collections.singletonList(new org.java_websocket.protocols.Protocol("chat"))
+                        );
+                        SoopWebSocket webSocket = new SoopWebSocket(
+                                "wss://" + liveInfo.CHDOMAIN() + ":" + liveInfo.CHPT() + "/Websocket/" + liveInfo.BJID(),
+                                draft6455, liveInfo, soopUser, donationRewards, poong);
+                        webSocket.connect();
+                        soopWebSocketList.add(webSocket);
+                        Logger.info("[Soop][" + soopUser.get("nickname") + "] 방송 연결 성공.");
+                    })
+                    .exceptionally(e -> {
+                        Logger.error("[Soop][" + soopUser.get("nickname") + "] 숲 채팅 연결 중 오류 발생.");
+                        Logger.debug(e.getMessage());
+                        return null;
+                    });
+        });
     }
 
     private void connectSoopList() {
@@ -496,12 +486,11 @@ public final class DoneConnector extends JavaPlugin implements Listener {
                         disconnectSoopList();
                         clearConfig();
                         loadConfig();
-                        connectChzzkList();
-                        connectSoopList();
+                        loadUsersAndConnectAsync();
                         sender.sendMessage(ChatColor.GREEN + "[Done] 설정이 성공적으로 리로드되었습니다!");
 
                         if (WhiteList) {
-                            refreshWhitelist();
+                            refreshWhitelistAsync();
                         }
 
                         if (SheetMode) { // sheetMode가 true일 때만 실행
@@ -584,99 +573,62 @@ public final class DoneConnector extends JavaPlugin implements Listener {
         for (Map<String, String> chzzkUser : chzzkUserList) {
             String chzzkId = chzzkUser.get("id");
             String minecraftName = chzzkUser.get("tag");
-            boolean isLive = isChzzkLive(chzzkId);
-            boolean wasLive = liveStatus.getOrDefault(chzzkId, false);
+            isChzzkLive(chzzkId).thenAccept(isLive -> {
+                boolean wasLive = liveStatus.getOrDefault(chzzkId, false);
 
-            if (isLive != wasLive) { // 상태 변경이 있을 경우에만 실행
-                if (isLive) {
-                    Logger.info("[Chzzk][" + chzzkUser.get("nickname") + "] 방송이 시작되었습니다! 연결 시도...");
-                    connectChzzk(chzzkUser);
-                    if (markLive) {
-                        Bukkit.getScheduler().runTask(this, () -> Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "방송켜짐 " + minecraftName));
+                if (isLive != wasLive) { // 상태 변경이 있을 경우에만 실행
+                    if (isLive) {
+                        Logger.info("[Chzzk][" + chzzkUser.get("nickname") + "] 방송이 시작되었습니다! 연결 시도...");
+                        connectChzzk(chzzkUser);
+                        if (markLive) {
+                            Bukkit.getScheduler().runTask(this, () -> Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "방송켜짐 " + minecraftName));
+                        }
+                    } else {
+                        Logger.info("[Chzzk][" + chzzkUser.get("nickname") + "] 방송이 종료되었습니다! 연결 해제...");
+                        disconnectByNickName(chzzkUser.get("nickname"));
+                        if (markLive) {
+                            Bukkit.getScheduler().runTask(this, () -> Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "방송꺼짐 " + minecraftName));
+                        }
                     }
-                } else {
-                    Logger.info("[Chzzk][" + chzzkUser.get("nickname") + "] 방송이 종료되었습니다! 연결 해제...");
-                    disconnectByNickName(chzzkUser.get("nickname"));
-                    if (markLive) {
-                        Bukkit.getScheduler().runTask(this, () -> Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "방송꺼짐 " + minecraftName));
-                    }
+                    liveStatus.put(chzzkId, isLive);
                 }
-                liveStatus.put(chzzkId, isLive);
-            }
+            });
         }
 
         for (Map<String, String> soopUser : soopUserList) {
             String soopId = soopUser.get("id");
             String minecraftName = soopUser.get("tag");
-            boolean isLive = isSoopLive(soopId);
-            boolean wasLive = liveStatus.getOrDefault(soopId, false);
+            isSoopLive(soopId).thenAccept(isLive -> {
+                boolean wasLive = liveStatus.getOrDefault(soopId, false);
 
-            if (isLive != wasLive) { // 상태 변경이 있을 경우에만 실행
-                if (isLive) {
-                    Logger.info("[Soop][" + soopUser.get("nickname") + "] 방송이 시작되었습니다! 연결 시도...");
-                    connectSoop(soopUser);
-                    if (markLive) {
-                        Bukkit.getScheduler().runTask(this, () -> Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "방송켜짐 " + minecraftName));
+                if (isLive != wasLive) { // 상태 변경이 있을 경우에만 실행
+                    if (isLive) {
+                        Logger.info("[Soop][" + soopUser.get("nickname") + "] 방송이 시작되었습니다! 연결 시도...");
+                        connectSoop(soopUser);
+                        if (markLive) {
+                            Bukkit.getScheduler().runTask(this, () -> Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "방송켜짐 " + minecraftName));
+                        }
+                    } else {
+                        Logger.info("[Soop][" + soopUser.get("nickname") + "] 방송이 종료되었습니다! 연결 해제...");
+                        disconnectByNickName(soopUser.get("nickname"));
+                        if (markLive) {
+                            Bukkit.getScheduler().runTask(this, () -> Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "방송꺼짐 " + minecraftName));
+                        }
                     }
-                } else {
-                    Logger.info("[Soop][" + soopUser.get("nickname") + "] 방송이 종료되었습니다! 연결 해제...");
-                    disconnectByNickName(soopUser.get("nickname"));
-                    if (markLive) {
-                        Bukkit.getScheduler().runTask(this, () -> Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "방송꺼짐 " + minecraftName));
-                    }
+                    liveStatus.put(soopId, isLive);
                 }
-                liveStatus.put(soopId, isLive);
-            }
+            });
         }
     }
 
-    public void refreshWhitelist() {
-        // config.yml 읽기
-        FileConfiguration config = plugin.getConfig();
-        if (!config.getBoolean("WhiteList", false)) {
-            return; // 화이트리스트 기능 꺼져있으면 무시
-        }
-
-        // 1. 기존 화이트리스트 초기화
-        for (OfflinePlayer player : Bukkit.getWhitelistedPlayers()) {
-            player.setWhitelisted(false);
-        }
-
-        // 2. user.yml 읽기
-        File userFile = new File(plugin.getDataFolder(), "user.yml");
-        if (!userFile.exists()) {
-            plugin.getLogger().warning("user.yml 파일을 찾을 수 없습니다!");
-            return;
-        }
-        FileConfiguration userConfig = YamlConfiguration.loadConfiguration(userFile);
-
-        // 3. 데이터 탐색
-        ConfigurationSection rootSection = userConfig.getConfigurationSection("");
-        if (rootSection == null) {
-            plugin.getLogger().warning("user.yml 안에 데이터가 없습니다!");
-            return;
-        }
-
-        for (String key : rootSection.getKeys(false)) { // 예: "치지직"
-            ConfigurationSection groupSection = rootSection.getConfigurationSection(key);
-            if (groupSection == null) continue;
-
-            for (String subKey : groupSection.getKeys(false)) { // 예: "스카치"
-                ConfigurationSection playerSection = groupSection.getConfigurationSection(subKey);
-                if (playerSection == null) continue;
-
-                String mcName = playerSection.getString("마크닉네임");
-                if (mcName != null && !mcName.isEmpty()) {
-                    OfflinePlayer offlinePlayer = Bukkit.getOfflinePlayer(mcName);
-                    offlinePlayer.setWhitelisted(true);
-                    plugin.getLogger().info("화이트리스트 추가됨: " + mcName);
-                }
-            }
-        }
-    }
+    
 
     private void startLiveStatusChecker() {
         Bukkit.getScheduler().runTaskTimerAsynchronously(this, () -> {
+            if (Bukkit.getOnlinePlayers().isEmpty()) {
+                // 온라인 플레이어가 없으면 API 호출을 하지 않음
+                return;
+            }
             try {
                 checkAndConnectLiveStreams();
             } catch (Exception e) {
@@ -685,5 +637,86 @@ public final class DoneConnector extends JavaPlugin implements Listener {
         }, 0L, 20L * 5); // 5초마다 실행
     }
 
-    
+    private void loadUsersAndConnectAsync() {
+        Bukkit.getScheduler().runTaskAsynchronously(this, () -> {
+            try {
+                File userFile = new File(getDataFolder(), "user.yml");
+                if (!userFile.exists()) saveResource("user.yml", false);
+                FileConfiguration userConfig = YamlConfiguration.loadConfiguration(userFile);
+
+                Logger.info("치지직 & 숲 아이디 로드 중...");
+                chzzkUserList.clear();
+                soopUserList.clear();
+                loadUsers(userConfig, "치지직", chzzkUserList);
+                loadUsers(userConfig, "숲", soopUserList);
+
+                if (chzzkUserList.isEmpty() && soopUserList.isEmpty()) {
+                    throw new DoneException(ExceptionCode.ID_NOT_FOUND);
+                }
+
+                // 웹소켓 연결
+                connectChzzkList();
+                connectSoopList();
+
+                // 화이트리스트 새로고침 (비동기적으로 호출)
+                if (WhiteList) {
+                    refreshWhitelistAsync();
+                }
+
+                Logger.info(ChatColor.GREEN + "유저 정보 및 웹소켓 연결 완료.");
+
+            } catch (Exception e) {
+                Logger.error("유저 정보 로드 및 웹소켓 연결 중 오류 발생: " + e.getMessage());
+                Logger.debug("오류 상세: " + e.getMessage());
+            }
+        });
+    }
+
+    public void refreshWhitelistAsync() {
+        Bukkit.getScheduler().runTaskAsynchronously(this, () -> {
+            // config.yml 읽기
+            FileConfiguration config = plugin.getConfig();
+            if (!config.getBoolean("WhiteList", false)) {
+                return; // 화이트리스트 기능 꺼져있으면 무시
+            }
+
+            // 1. 기존 화이트리스트 초기화
+            for (OfflinePlayer player : Bukkit.getWhitelistedPlayers()) {
+                player.setWhitelisted(false);
+            }
+
+            // 2. user.yml 읽기
+            File userFile = new File(plugin.getDataFolder(), "user.yml");
+            if (!userFile.exists()) {
+                plugin.getLogger().warning("user.yml 파일을 찾을 수 없습니다!");
+                return;
+            }
+            FileConfiguration userConfig = YamlConfiguration.loadConfiguration(userFile);
+
+            // 3. 데이터 탐색
+            ConfigurationSection rootSection = userConfig.getConfigurationSection("");
+            if (rootSection == null) {
+                plugin.getLogger().warning("user.yml 안에 데이터가 없습니다!");
+                return;
+            }
+
+            for (String key : rootSection.getKeys(false)) { // 예: "치지직"
+                ConfigurationSection groupSection = rootSection.getConfigurationSection(key);
+                if (groupSection == null) continue;
+
+                for (String subKey : groupSection.getKeys(false)) { // 예: "스카치"
+                    ConfigurationSection playerSection = groupSection.getConfigurationSection(subKey);
+                    if (playerSection == null) continue;
+
+                    String mcName = playerSection.getString("마크닉네임");
+                    if (mcName != null && !mcName.isEmpty()) {
+                        OfflinePlayer offlinePlayer = Bukkit.getOfflinePlayer(mcName);
+                        offlinePlayer.setWhitelisted(true);
+                        plugin.getLogger().info("화이트리스트 추가됨: " + mcName);
+                    }
+                }
+            }
+            Logger.info(ChatColor.GREEN + "화이트리스트 새로고침 완료.");
+        });
+    }
 }
