@@ -673,17 +673,18 @@ public final class DoneConnector extends JavaPlugin implements Listener {
     }
 
     public void refreshWhitelistAsync() {
-        Bukkit.getScheduler().runTaskAsynchronously(this, () -> {
-            // config.yml 읽기
-            FileConfiguration config = plugin.getConfig();
-            if (!config.getBoolean("WhiteList", false)) {
-                return; // 화이트리스트 기능 꺼져있으면 무시
-            }
+        // config.yml 읽기
+        FileConfiguration config = plugin.getConfig();
+        if (!config.getBoolean("WhiteList", false)) {
+            return; // 화이트리스트 기능 꺼져있으면 무시
+        }
 
             // 1. 기존 화이트리스트 초기화
-            for (OfflinePlayer player : Bukkit.getWhitelistedPlayers()) {
-                player.setWhitelisted(false);
-            }
+            Bukkit.getScheduler().runTask(plugin, () -> {
+                for (OfflinePlayer player : Bukkit.getWhitelistedPlayers()) {
+                    player.setWhitelisted(false);
+                }
+            });
 
             // 2. user.yml 읽기
             File userFile = new File(plugin.getDataFolder(), "user.yml");
@@ -710,13 +711,14 @@ public final class DoneConnector extends JavaPlugin implements Listener {
 
                     String mcName = playerSection.getString("마크닉네임");
                     if (mcName != null && !mcName.isEmpty()) {
-                        OfflinePlayer offlinePlayer = Bukkit.getOfflinePlayer(mcName);
-                        offlinePlayer.setWhitelisted(true);
-                        plugin.getLogger().info("화이트리스트 추가됨: " + mcName);
+                        Bukkit.getScheduler().runTask(plugin, () -> {
+                            OfflinePlayer offlinePlayer = Bukkit.getOfflinePlayer(mcName);
+                            offlinePlayer.setWhitelisted(true);
+                            plugin.getLogger().info("화이트리스트 추가됨: " + mcName);
+                        });
                     }
                 }
             }
             Logger.info(ChatColor.GREEN + "화이트리스트 새로고침 완료.");
-        });
     }
 }
