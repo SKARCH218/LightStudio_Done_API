@@ -1,14 +1,43 @@
 # LightStudio_Done_API
 
-This is a Minecraft donation integration plugin developed in Java.
+이 플러그인은 마인크래프트 서버와 치지직/SOOP(구 아프리카TV) 후원 시스템을 연동하여, 방송 후원 시 서버 내에서 다양한 기능을 수행할 수 있도록 돕는 자바 기반의 플러그인입니다.
 
-## Features
+## 주요 기능
 
-*   **Asynchronous API Calls:** All external API calls are now asynchronous, improving server responsiveness and performance.
-*   **Optimized Live Status Checking:** Live status checks are performed only when players are online, reducing unnecessary network traffic.
-*   **Asynchronous Configuration Loading:** User data and whitelist refresh operations are now asynchronous, preventing server freezes during `/done reload`.
-*   **Enhanced Error Handling:** Improved error handling for API calls and WebSocket connections.
+*   **비동기 API 호출:** 모든 외부 API(치지직, SOOP) 호출이 비동기 방식으로 처리됩니다. 이로 인해 API 응답을 기다리는 동안 메인 서버 스레드가 멈추지 않아 서버의 응답성과 전반적인 성능이 크게 향상되었습니다.
+*   **최적화된 방송 상태 확인:** 플레이어가 서버에 접속해 있을 때만 방송 상태 확인을 위한 API 호출을 수행합니다. 불필요한 네트워크 트래픽과 API 요청을 줄여 서버 자원 사용을 최적화합니다.
+*   **비동기 설정 로딩:** 사용자 데이터 및 화이트리스트 새로고침 작업이 비동기적으로 처리됩니다. `/done reload` 명령 사용 시 발생할 수 있었던 서버 멈춤(프리징) 현상을 방지합니다.
+*   **강화된 예외 처리:** API 호출 및 웹소켓 연결 과정에서 발생할 수 있는 다양한 예외 상황에 대한 처리가 강화되어 플러그인의 안정성이 높아졌습니다.
 
-## Setup and Usage
+## 설치 및 사용법
 
-(Further details on setup and usage will be added here.)
+(설치 및 사용법에 대한 자세한 내용은 여기에 추가될 예정입니다.)
+
+## 명령어
+
+플러그인은 다음과 같은 명령어를 제공합니다.
+
+### `/done` 명령어 (관리자 전용)
+
+`plugin.yml`에 설정된 `permission: op`에 따라 `op` 권한을 가진 사용자만 사용할 수 있습니다.
+
+*   **`/done on`**: 후원 연동 기능을 활성화합니다. 치지직 및 SOOP 웹소켓 연결을 시도합니다.
+*   **`/done off`**: 후원 연동 기능을 비활성화합니다. 현재 연결된 모든 치지직 및 SOOP 웹소켓 연결을 해제합니다.
+*   **`/done reconnect <all|닉네임>`:
+    *   `all`: 모든 후원 연동 웹소켓 연결을 재시도합니다.
+    *   `<닉네임>`: 특정 마인크래프트 닉네임과 연결된 방송 플랫폼의 웹소켓 연결만 재시도합니다.
+*   **`/done reload`**: 플러그인의 설정 파일(`config.yml`, `done.yml`, `user.yml`)을 다시 불러오고, 기존 웹소켓 연결을 해제한 후 새로운 설정으로 다시 연결을 시도합니다. 화이트리스트 기능이 활성화되어 있다면 화이트리스트도 새로고침합니다. 이 과정은 비동기적으로 처리되어 서버 멈춤 현상을 방지합니다.
+*   **`/done sheetreload`**: `config.yml`에서 `SheetMode`가 `true`로 설정되어 있을 경우, Google Sheets 데이터를 다시 불러옵니다. 이 작업 또한 비동기적으로 처리됩니다.
+*   **`/done add`**: (현재 구현되지 않았거나, 추가적인 인자가 필요한 명령어일 수 있습니다. `plugin.yml`에는 `add`가 있지만, `DoneConnector.java`의 `onCommand`에는 `add`에 대한 구체적인 로직이 없습니다. 필요시 추가 설명이 필요합니다.)
+
+### `/api` 명령어 (일반 사용자용)
+
+`plugin.yml`에 설정된 `permission: api.use` 권한을 가진 사용자만 사용할 수 있습니다.
+
+*   **`/api`**: 명령어를 실행한 플레이어의 마인크래프트 닉네임과 연결된 방송 플랫폼(치지직, SOOP)의 현재 방송 상태(ON/OFF)를 확인하여 메시지로 출력합니다.
+
+### `/방송정보` 명령어 (일반 사용자용)
+
+`plugin.yml`에 설정된 `permission: broadcastinfo.use` 권한을 가진 사용자만 사용할 수 있습니다.
+
+*   **`/방송정보 <플레이어 닉네임>`**: 특정 플레이어의 마인크래프트 닉네임과 연결된 치지직 또는 SOOP 방송의 바로가기 링크를 채팅으로 제공합니다. 링크는 클릭 가능하며, 마우스를 올리면 설명이 나타납니다. 해당 플레이어의 방송 정보를 찾을 수 없는 경우 메시지를 출력합니다.
