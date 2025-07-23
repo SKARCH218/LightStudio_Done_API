@@ -14,7 +14,9 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
+import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
+import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.java_websocket.drafts.Draft_6455;
@@ -118,6 +120,9 @@ public final class DoneConnector extends JavaPlugin implements Listener {
         }
         if (!config.contains("MarkLive")) {
             config.set("MarkLive", false);
+        }
+        if (!config.contains("WhiteList")) {
+            config.set("WhiteList", false);
         }
         this.saveConfig(); // 변경된 내용 저장
 
@@ -489,10 +494,6 @@ public final class DoneConnector extends JavaPlugin implements Listener {
                         loadUsersAndConnectAsync();
                         sender.sendMessage(ChatColor.GREEN + "[Done] 설정이 성공적으로 리로드되었습니다!");
 
-                        if (WhiteList) {
-                            refreshWhitelistAsync();
-                        }
-
                         if (SheetMode) { // sheetMode가 true일 때만 실행
                             sheet = new Sheet(this);
                             Bukkit.getScheduler().runTaskAsynchronously(this, () -> sheet.fetchAndSaveData()); // 비동기 실행
@@ -658,11 +659,6 @@ public final class DoneConnector extends JavaPlugin implements Listener {
                 connectChzzkList();
                 connectSoopList();
 
-                // 화이트리스트 새로고침 (비동기적으로 호출)
-                if (WhiteList) {
-                    refreshWhitelistAsync();
-                }
-
                 Logger.info(ChatColor.GREEN + "유저 정보 및 웹소켓 연결 완료.");
 
             } catch (Exception e) {
@@ -672,58 +668,55 @@ public final class DoneConnector extends JavaPlugin implements Listener {
         });
     }
 
-    public void refreshWhitelistAsync() {
-        // config.yml 읽기
-        FileConfiguration config = plugin.getConfig();
-        if (!config.getBoolean("WhiteList", false)) {
-            return; // 화이트리스트 기능 꺼져있으면 무시
+    @EventHandler
+    public void onPlayerJoin(PlayerJoinEvent event) {
+        Player player = event.getPlayer();
+        String playerName = player.getName();
+
+        // WhiteList 설정이 false이면 플러그인 자체 화이트리스트 기능을 사용하지 않습니다.
+        if (!WhiteList) {
+            return;
         }
 
-            // 1. 기존 화이트리스트 초기화
-            Bukkit.getScheduler().runTask(plugin, () -> {
-                for (OfflinePlayer player : Bukkit.getWhitelistedPlayers()) {
-                    player.setWhitelisted(false);
-                }
-            });
+        // OP 플레이어는 항상 허용합니다.
+        if (player.isOp()) {
+            return;
+        }
 
-            // 2. user.yml 읽기
-            File userFile = new File(plugin.getDataFolder(), "user.yml");
-            if (!userFile.exists()) {
-                plugin.getLogger().warning("user.yml 파일을 찾을 수 없습니다!");
-                return;
-            }
+        // 서버의 기본 화이트리스트에 등록된 플레이어는 항상 허용합니다.
+        if (Bukkit.getWhitelistedPlayers().contains(player)) {
+            return;
+        }
+
+        // user.yml에서 모든 마크닉네임을 가져옵니다.
+        Set<String> allowedNames = new HashSet<>();
+        File userFile = new File(getDataFolder(), "user.yml");
+        if (userFile.exists()) {
             FileConfiguration userConfig = YamlConfiguration.loadConfiguration(userFile);
-
-            // 3. 데이터 탐색
             ConfigurationSection rootSection = userConfig.getConfigurationSection("");
-            if (rootSection == null) {
-                plugin.getLogger().warning("user.yml 안에 데이터가 없습니다!");
-                return;
-            }
-
-            for (String key : rootSection.getKeys(false)) { // 예: "치지직"
-                ConfigurationSection groupSection = rootSection.getConfigurationSection(key);
-                if (groupSection == null) continue;
-
-                for (String subKey : groupSection.getKeys(false)) { // 예: "스카치"
-                    ConfigurationSection playerSection = groupSection.getConfigurationSection(subKey);
-                    if (playerSection == null) continue;
-
-                    String mcName = playerSection.getString("마크닉네임");
-                    if (mcName != null && !mcName.isEmpty()) {
-                        // 마인크래프트 닉네임 유효성 검사 (영문, 숫자, 밑줄만 허용)
-                        if (!mcName.matches("^[a-zA-Z0-9_]{3,16}$")) {
-                            plugin.getLogger().warning("유효하지 않은 마인크래프트 닉네임이 감지되었습니다: " + mcName + " (화이트리스트에서 제외됩니다)");
-                            continue; // 유효하지 않은 닉네임은 건너뜁니다.
+            if (rootSection != null) {
+                for (String key : rootSection.getKeys(false)) {
+                    ConfigurationSection groupSection = rootSection.getConfigurationSection(key);
+                    if (groupSection != null) {
+                        for (String subKey : groupSection.getKeys(false)) {
+                            ConfigurationSection playerSection = groupSection.getConfigurationSection(subKey);
+                            if (playerSection != null) {
+                                String mcName = playerSection.getString("마크닉네임");
+                                if (mcName != null && !mcName.isEmpty()) {
+                                    allowedNames.add(mcName);
+                                }
+                            }
                         }
-                        Bukkit.getScheduler().runTask(plugin, () -> {
-                            OfflinePlayer offlinePlayer = Bukkit.getOfflinePlayer(mcName);
-                            offlinePlayer.setWhitelisted(true);
-                            plugin.getLogger().info("화이트리스트 추가됨: " + mcName);
-                        });
                     }
                 }
             }
-            Logger.info(ChatColor.GREEN + "화이트리스트 새로고침 완료.");
+        }
+
+        // 허용된 닉네임 목록에 플레이어의 닉네임이 없으면 접속을 차단합니다.
+        if (!allowedNames.contains(playerName)) {
+            event.setJoinMessage(null); // 접속 메시지 제거
+            player.kickPlayer(ChatColor.RED + "등록되지 않은 플레이어입니다."); // 플레이어 추방
+            Logger.info(ChatColor.YELLOW + playerName + "님이 등록되지 않은 플레이어로 접속을 시도하여 차단되었습니다.");
+        }
     }
 }

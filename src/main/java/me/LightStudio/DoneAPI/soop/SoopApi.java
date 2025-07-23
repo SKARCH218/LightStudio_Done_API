@@ -57,18 +57,18 @@ public class SoopApi {
 
                             JSONObject channel = (JSONObject) jsonObject.get("CHANNEL");
                             SoopLiveInfo soopLiveInfo = new SoopLiveInfo(
-                                    channel.get("CHDOMAIN").toString(),
-                                    channel.get("CHATNO").toString(),
-                                    channel.get("FTK").toString(),
-                                    channel.get("TITLE").toString(),
-                                    channel.get("BJID").toString(),
-                                    channel.get("BNO").toString(),
-                                    channel.get("CHIP").toString(),
-                                    String.valueOf(Integer.parseInt(channel.get("CHPT").toString()) + 1),
-                                    channel.get("CTIP").toString(),
-                                    channel.get("CTPT").toString(),
-                                    channel.get("GWIP").toString(),
-                                    channel.get("GWPT").toString()
+                                    getStringOrDefault(channel, "CHDOMAIN", ""),
+                                    getStringOrDefault(channel, "CHATNO", ""),
+                                    getStringOrDefault(channel, "FTK", ""),
+                                    getStringOrDefault(channel, "TITLE", ""),
+                                    getStringOrDefault(channel, "BJID", ""),
+                                    getStringOrDefault(channel, "BNO", ""),
+                                    getStringOrDefault(channel, "CHIP", ""),
+                                    String.valueOf(getIntegerOrDefault(channel, "CHPT", 0) + 1),
+                                    getStringOrDefault(channel, "CTIP", ""),
+                                    getStringOrDefault(channel, "CTPT", ""),
+                                    getStringOrDefault(channel, "GWIP", ""),
+                                    getStringOrDefault(channel, "GWPT", "")
                             );
 
                             Logger.debug(soopLiveInfo.toString());
@@ -104,5 +104,23 @@ public class SoopApi {
         }
 
         return HttpRequest.BodyPublishers.ofString(builder.toString());
+    }
+
+    private static String getStringOrDefault(JSONObject jsonObject, String key, String defaultValue) {
+        Object value = jsonObject.get(key);
+        return value != null ? value.toString() : defaultValue;
+    }
+
+    private static int getIntegerOrDefault(JSONObject jsonObject, String key, int defaultValue) {
+        Object value = jsonObject.get(key);
+        if (value == null) {
+            return defaultValue;
+        }
+        try {
+            return Integer.parseInt(value.toString());
+        } catch (NumberFormatException e) {
+            Logger.warn("Failed to parse integer for key " + key + ": " + value + ", using default value " + defaultValue);
+            return defaultValue;
+        }
     }
 }
